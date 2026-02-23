@@ -4,3 +4,4 @@ psycopg2-binary # Driver do PostgreSQL
 pgvector        # Integração do Django com vetores
 openai          # SDK da OpenAI
 djangorestframework # Para o seu front-end consumir a API
+gunicorn

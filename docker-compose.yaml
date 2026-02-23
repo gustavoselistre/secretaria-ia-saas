@@ -1,0 +1,28 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17 # Já vem com o pgvector instalado e configurado
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=secretaria_db
+      - POSTGRES_USER=gustavo
+      - POSTGRES_PASSWORD=123456
+    ports:
+      - "5432:5432"
+
+  web:
+    build: .
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_HOST=db
+      - DB_NAME=secretaria_db
+      - DB_USER=gustavo
+      - DB_PASSWORD=123456
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
