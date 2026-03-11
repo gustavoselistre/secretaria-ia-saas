@@ -31,7 +31,7 @@ class KnowledgeChunk(models.Model):
         related_name="chunks",
     )
     content = models.TextField()
-    embedding = VectorField(dimensions=1536)
+    embedding = VectorField(dimensions=768)
     metadata = models.JSONField(default=dict, blank=True)
 
     class Meta:

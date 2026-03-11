@@ -41,3 +41,12 @@ dist/
 build/
 *.egg-info/
 *.egg
+
+# Credentials
+gcp-credentials.json
+*.pem
+*.key
+
+# Database dumps
+*.sql
+*.dump

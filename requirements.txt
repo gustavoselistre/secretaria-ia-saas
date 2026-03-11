@@ -1,7 +1,10 @@
 django
-django-environ  # Para gerenciar chaves de API e DB de forma segura
-psycopg2-binary # Driver do PostgreSQL
-pgvector        # Integração do Django com vetores
-openai          # SDK da OpenAI
-djangorestframework # Para o seu front-end consumir a API
+django-environ
+psycopg2-binary
+pgvector
+openai
+djangorestframework
 gunicorn
+google-cloud-aiplatform
+google-genai
+langchain-google-vertexai
