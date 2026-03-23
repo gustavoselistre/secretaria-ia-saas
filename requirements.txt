@@ -8,3 +8,5 @@ gunicorn
 google-cloud-aiplatform
 google-genai
 langchain-google-vertexai
+twilio
+python-json-logger

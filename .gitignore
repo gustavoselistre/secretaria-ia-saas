@@ -50,3 +50,7 @@ gcp-credentials.json
 # Database dumps
 *.sql
 *.dump
+
+# Claude Code
+.claude/
+docs/

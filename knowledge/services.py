@@ -91,8 +91,8 @@ class VertexAIEmbeddingProvider(EmbeddingProvider):
     def get_embedding(self, text: str) -> list[float]:
         try:
             response = self._client.models.embed_content(
-                model="text-embedding-004",
-                contents=[text],
+                model="gemini-embedding-001",
+                contents=text,
                 config={"output_dimensionality": EMBEDDING_DIMENSIONS},
             )
             return response.embeddings[0].values
