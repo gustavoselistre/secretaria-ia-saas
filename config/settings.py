@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'knowledge',
     'chat',
     'webhook',
+    'tools',
 ]
 
 MIDDLEWARE = [

@@ -18,7 +18,9 @@ from django.views.decorators.http import require_POST
 from twilio.request_validator import RequestValidator
 from twilio.twiml.messaging_response import MessagingResponse
 
-from chat.services import ChatService
+import requests
+
+from chat.services import ChatService, get_llm_provider
 from webhook.models import WhatsAppConfig
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,31 @@ def twilio_whatsapp_webhook(request) -> HttpResponse:
     from_number = request.POST.get("From", "")       # whatsapp:+5551...
     to_number = request.POST.get("To", "")             # whatsapp:+5551...
     body = request.POST.get("Body", "").strip()
+    num_media = int(request.POST.get("NumMedia", "0"))
+
+    # 2b. Se tem áudio, transcreve para texto
+    if num_media > 0 and not body:
+        media_type = request.POST.get("MediaContentType0", "")
+        media_url = request.POST.get("MediaUrl0", "")
+
+        if media_type.startswith("audio/") and media_url:
+            logger.info("Áudio recebido de %s: %s (%s)", from_number, media_url, media_type)
+            try:
+                # Baixar áudio do Twilio (requer autenticação)
+                account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
+                auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+                audio_response = requests.get(
+                    media_url, auth=(account_sid, auth_token), timeout=30,
+                )
+                audio_response.raise_for_status()
+
+                # Transcrever via LLM provider
+                provider = get_llm_provider()
+                body = provider.transcribe_audio(audio_response.content, media_type)
+                logger.info("Áudio transcrito: %s", body[:100])
+            except Exception as exc:
+                logger.error("Erro ao transcrever áudio: %s", exc)
+                body = ""
 
     if not body:
         return HttpResponse(status=204)

@@ -1,0 +1,33 @@
+[
+  {"category": "Cabelo", "name": "Corte feminino", "price": 80.00, "duration_minutes": 45},
+  {"category": "Cabelo", "name": "Corte masculino", "price": 45.00, "duration_minutes": 30},
+  {"category": "Cabelo", "name": "Escova", "price": 60.00, "duration_minutes": 40},
+  {"category": "Cabelo", "name": "Escova progressiva", "price": 250.00, "duration_minutes": 120},
+  {"category": "Cabelo", "name": "Hidratação capilar", "price": 90.00, "duration_minutes": 60},
+  {"category": "Cabelo", "name": "Coloração (tintura)", "price": 150.00, "duration_minutes": 90},
+  {"category": "Cabelo", "name": "Mechas/Luzes", "price": 200.00, "duration_minutes": 120},
+  {"category": "Cabelo", "name": "Cauterização", "price": 120.00, "duration_minutes": 60},
+  {"category": "Cabelo", "name": "Penteado para festas", "price": 150.00, "duration_minutes": 60},
+
+  {"category": "Unhas", "name": "Manicure", "price": 35.00, "duration_minutes": 30},
+  {"category": "Unhas", "name": "Pedicure", "price": 40.00, "duration_minutes": 40},
+  {"category": "Unhas", "name": "Combo manicure + pedicure", "price": 65.00, "duration_minutes": 60},
+  {"category": "Unhas", "name": "Unhas em gel (aplicação)", "price": 120.00, "duration_minutes": 90},
+  {"category": "Unhas", "name": "Unhas em gel (manutenção)", "price": 80.00, "duration_minutes": 60},
+  {"category": "Unhas", "name": "Esmaltação em gel", "price": 50.00, "duration_minutes": 30},
+  {"category": "Unhas", "name": "Nail art (por unha)", "price": 5.00, "duration_minutes": 5},
+
+  {"category": "Cílios", "name": "Extensão de cílios fio a fio", "price": 180.00, "duration_minutes": 90},
+  {"category": "Cílios", "name": "Extensão de cílios volume russo", "price": 220.00, "duration_minutes": 120},
+  {"category": "Cílios", "name": "Manutenção de cílios (até 20 dias)", "price": 100.00, "duration_minutes": 60},
+  {"category": "Cílios", "name": "Manutenção de cílios (até 30 dias)", "price": 130.00, "duration_minutes": 60},
+  {"category": "Cílios", "name": "Lifting de cílios", "price": 120.00, "duration_minutes": 60},
+
+  {"category": "Sobrancelha", "name": "Design de sobrancelha", "price": 40.00, "duration_minutes": 30},
+  {"category": "Sobrancelha", "name": "Design + henna", "price": 60.00, "duration_minutes": 40},
+  {"category": "Sobrancelha", "name": "Micropigmentação de sobrancelha", "price": 450.00, "duration_minutes": 120},
+
+  {"category": "Bronzeamento", "name": "Bronzeamento a jato (corpo inteiro)", "price": 120.00, "duration_minutes": 45},
+  {"category": "Bronzeamento", "name": "Bronzeamento a jato (meio corpo)", "price": 70.00, "duration_minutes": 30},
+  {"category": "Bronzeamento", "name": "Pacote 4 sessões corpo inteiro", "price": 400.00, "duration_minutes": 45}
+]

@@ -9,4 +9,5 @@ google-cloud-aiplatform
 google-genai
 langchain-google-vertexai
 twilio
+requests
 python-json-logger
