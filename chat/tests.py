@@ -10,7 +10,7 @@ from django.test import TestCase
 
 from agents.models import AIAgent
 from chat.models import Conversation, Message
-from chat.services import ChatService
+from chat.services import ChatService, LLMResponse
 from organizations.models import Organization
 
 
@@ -29,6 +29,9 @@ class ChatServiceTests(TestCase):
 
         self.mock_llm = MagicMock()
         self.mock_llm.generate.return_value = "Resposta da IA."
+        self.mock_llm.generate_with_tools.return_value = LLMResponse(
+            text="Resposta da IA.", tool_calls=[],
+        )
 
         self.mock_knowledge = MagicMock()
         self.mock_knowledge.find_relevant_context.return_value = []

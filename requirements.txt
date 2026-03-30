@@ -11,3 +11,5 @@ langchain-google-vertexai
 twilio
 requests
 python-json-logger
+google-api-python-client
+google-auth

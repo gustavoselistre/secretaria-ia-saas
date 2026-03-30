@@ -12,7 +12,8 @@ from datetime import datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
 
-from tools.models import Appointment, Client, Quote, ServiceCatalog
+from tools.calendar_providers import get_calendar_provider
+from tools.models import Appointment, CalendarConfig, Client, Quote, ServiceCatalog
 from tools.registry import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -69,18 +70,43 @@ class CheckAvailabilityTool(BaseTool):
     def execute(self, organization, **kwargs) -> dict[str, Any]:
         date_str = kwargs["date"]
         try:
-            date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
             return {"error": f"Data inválida: {date_str}. Use o formato YYYY-MM-DD."}
 
-        # Horário de funcionamento: 9h-19h (seg-sex), 9h-17h (sáb)
+        # Tenta usar calendário externo se configurado
+        config = CalendarConfig.objects.filter(
+            organization=organization, is_active=True,
+        ).first()
+
+        if config:
+            return self._external_availability(config, date_str)
+
+        return self._local_availability(organization, date_str)
+
+    def _external_availability(self, config: CalendarConfig, date_str: str) -> dict:
+        try:
+            provider = get_calendar_provider(config.provider)
+            slots = provider.get_available_slots(
+                calendar_id=config.calendar_id,
+                date=date_str,
+                credentials=config.credentials,
+                business_hours=config.business_hours,
+            )
+            return {"date": date_str, "available_slots": slots}
+        except Exception as exc:
+            logger.error("Erro ao consultar calendário externo (%s): %s", config.provider, exc)
+            return {"date": date_str, "available_slots": [], "error": "Erro ao consultar agenda externa."}
+
+    def _local_availability(self, organization, date_str: str) -> dict:
+        date = datetime.strptime(date_str, "%Y-%m-%d").date()
         weekday = date.weekday()
-        if weekday == 6:  # domingo
+
+        if weekday == 6:
             return {"date": date_str, "available_slots": [], "message": "Fechado aos domingos."}
 
-        end_hour = 17 if weekday == 5 else 19  # sáb: 17h, seg-sex: 19h
+        end_hour = 17 if weekday == 5 else 19
 
-        # Buscar agendamentos existentes
         booked = set(
             Appointment.objects.filter(
                 organization=organization,
@@ -89,7 +115,6 @@ class CheckAvailabilityTool(BaseTool):
             ).values_list("time", flat=True)
         )
 
-        # Gerar slots de 1h
         slots = []
         for hour in range(9, end_hour):
             t = time(hour, 0)
@@ -140,7 +165,7 @@ class ScheduleAppointmentTool(BaseTool):
         except ValueError:
             return {"error": "Data ou horário inválido. Use YYYY-MM-DD e HH:MM."}
 
-        # Verificar conflito
+        # Verificar conflito local
         conflict = Appointment.objects.filter(
             organization=organization,
             date=date,
@@ -171,6 +196,32 @@ class ScheduleAppointmentTool(BaseTool):
                 is_active=True,
             ).first()
 
+        # Criar evento no calendário externo se configurado
+        external_event_id = ""
+        config = CalendarConfig.objects.filter(
+            organization=organization, is_active=True,
+        ).first()
+
+        if config:
+            try:
+                provider = get_calendar_provider(config.provider)
+                title = f"{client.name} — {service.name if service else 'Agendamento'}"
+                result = provider.create_event(
+                    calendar_id=config.calendar_id,
+                    credentials=config.credentials,
+                    title=title,
+                    date=kwargs["date"],
+                    time=kwargs["time"],
+                    duration_minutes=service.duration_minutes if service else 60,
+                    description=kwargs.get("notes", ""),
+                )
+                external_event_id = result.get("event_id", "")
+            except Exception as exc:
+                logger.error(
+                    "Erro ao criar evento no calendário externo (%s): %s",
+                    config.provider, exc,
+                )
+
         appointment = Appointment.objects.create(
             organization=organization,
             client=client,
@@ -178,6 +229,7 @@ class ScheduleAppointmentTool(BaseTool):
             date=date,
             time=appt_time,
             notes=kwargs.get("notes", ""),
+            external_event_id=external_event_id,
         )
 
         return {

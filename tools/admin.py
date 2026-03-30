@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from tools.models import Appointment, Client, Quote, ServiceCatalog
+from tools.models import Appointment, CalendarConfig, Client, Quote, ServiceCatalog
 
 
 @admin.register(Client)
@@ -28,3 +28,9 @@ class AppointmentAdmin(admin.ModelAdmin):
 class QuoteAdmin(admin.ModelAdmin):
     list_display = ("__str__", "client", "total", "status", "organization", "created_at")
     list_filter = ("organization", "status")
+
+
+@admin.register(CalendarConfig)
+class CalendarConfigAdmin(admin.ModelAdmin):
+    list_display = ("organization", "provider", "calendar_id", "is_active")
+    list_filter = ("provider", "is_active")

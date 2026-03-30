@@ -82,6 +82,10 @@ class Appointment(models.Model):
         max_length=20, choices=Status.choices, default=Status.SCHEDULED
     )
     notes = models.TextField(blank=True, default="")
+    external_event_id = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="ID do evento no calendário externo (Google, Cal.com, Calendly)",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -125,3 +129,42 @@ class Quote(models.Model):
 
     def __str__(self):
         return f"Orçamento #{str(self.id)[:8]} — R$ {self.total}"
+
+
+class CalendarConfig(models.Model):
+    """Configuração de calendário externo por organização."""
+
+    class Provider(models.TextChoices):
+        GOOGLE = "google", "Google Calendar"
+        CALCOM = "calcom", "Cal.com"
+        CALENDLY = "calendly", "Calendly"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.OneToOneField(
+        "organizations.Organization",
+        on_delete=models.CASCADE,
+        related_name="calendar_config",
+    )
+    provider = models.CharField(max_length=20, choices=Provider.choices)
+    calendar_id = models.CharField(
+        max_length=255,
+        help_text="ID do calendário (Google), event type ID (Cal.com/Calendly)",
+    )
+    credentials = models.JSONField(
+        default=dict,
+        help_text="API key, tokens ou service account JSON conforme o provider",
+    )
+    business_hours = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='Override de horários. Ex: {"mon": ["09:00", "18:00"], "sat": ["09:00", "16:00"], "sun": null}',
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Configuração de Calendário"
+        verbose_name_plural = "Configurações de Calendário"
+
+    def __str__(self):
+        return f"{self.organization.name} — {self.get_provider_display()}"
