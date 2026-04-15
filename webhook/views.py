@@ -1,113 +1,60 @@
 """
 webhook/views.py
 
-Endpoint para receber mensagens do WhatsApp via Twilio.
-Valida assinatura, identifica o tenant e responde via ChatService.
+Endpoint para receber mensagens do WhatsApp. O provider ativo (Twilio ou uazapi)
+é escolhido em tempo de request via ``webhook.providers.get_whatsapp_provider``.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 
-from django.conf import settings
 from django.http import HttpResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from twilio.request_validator import RequestValidator
-from twilio.twiml.messaging_response import MessagingResponse
-
-import requests
-
 from chat.services import ChatService, get_llm_provider
-from webhook.models import WhatsAppConfig
+from webhook.providers import get_whatsapp_provider
 
 logger = logging.getLogger(__name__)
 
 
-def _validate_twilio_signature(request) -> bool:
-    """Valida X-Twilio-Signature para garantir autenticidade."""
-    auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
-
-    if not auth_token:
-        if not settings.DEBUG:
-            logger.critical(
-                "TWILIO_AUTH_TOKEN não configurado em produção — rejeitando request."
-            )
-            return False
-        logger.warning(
-            "TWILIO_AUTH_TOKEN não configurado — validação desabilitada (dev mode)."
-        )
-        return True
-
-    validator = RequestValidator(auth_token)
-    signature = request.META.get("HTTP_X_TWILIO_SIGNATURE", "")
-    url = request.build_absolute_uri()
-    params = request.POST.dict()
-
-    return validator.validate(url, params, signature)
-
-
 @csrf_exempt
 @require_POST
-def twilio_whatsapp_webhook(request) -> HttpResponse:
-    """Recebe mensagem do Twilio WhatsApp, gera resposta via IA e devolve TwiML."""
+def whatsapp_webhook(request) -> HttpResponse:
+    """Webhook unificado: recebe mensagem, gera resposta via IA e envia de volta."""
 
-    # 1. Valida assinatura Twilio
-    if not _validate_twilio_signature(request):
-        logger.warning("Assinatura Twilio inválida — request rejeitada.")
+    provider = get_whatsapp_provider()
+
+    # 1. Valida autenticidade (assinatura Twilio ou HMAC uazapi)
+    if not provider.validate_signature(request):
+        logger.warning("Assinatura %s inválida — request rejeitada.", provider.name)
         return HttpResponseForbidden("Invalid signature")
 
-    # 2. Extrai dados da mensagem
-    from_number = request.POST.get("From", "")       # whatsapp:+5551...
-    to_number = request.POST.get("To", "")             # whatsapp:+5551...
-    body = request.POST.get("Body", "").strip()
-    num_media = int(request.POST.get("NumMedia", "0"))
-
-    # 2b. Se tem áudio, transcreve para texto
-    if num_media > 0 and not body:
-        media_type = request.POST.get("MediaContentType0", "")
-        media_url = request.POST.get("MediaUrl0", "")
-
-        if media_type.startswith("audio/") and media_url:
-            logger.info("Áudio recebido de %s: %s (%s)", from_number, media_url, media_type)
-            try:
-                # Baixar áudio do Twilio (requer autenticação)
-                account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
-                auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
-                audio_response = requests.get(
-                    media_url, auth=(account_sid, auth_token), timeout=30,
-                )
-                audio_response.raise_for_status()
-
-                # Transcrever via LLM provider
-                provider = get_llm_provider()
-                body = provider.transcribe_audio(audio_response.content, media_type)
-                logger.info("Áudio transcrito: %s", body[:100])
-            except Exception as exc:
-                logger.error("Erro ao transcrever áudio: %s", exc)
-                body = ""
-
-    if not body:
+    # 2. Normaliza payload em IncomingMessage
+    message = provider.parse_incoming(request)
+    if message is None:
         return HttpResponse(status=204)
 
-    logger.info("Mensagem recebida: %s → %s: %s", from_number, to_number, body[:50])
+    logger.info(
+        "Mensagem recebida (%s): %s → tenant=%s: %s",
+        provider.name,
+        message.from_phone,
+        message.tenant_key,
+        message.body[:50] if message.body else "[áudio]",
+    )
 
-    # 3. Identifica o tenant pelo número de destino
-    try:
-        config = WhatsAppConfig.objects.select_related(
-            "organization", "agent",
-        ).get(
-            twilio_phone_number=to_number,
-            is_active=True,
-            organization__is_active=True,
+    # 3. Resolve tenant
+    config = provider.resolve_tenant(message)
+    if config is None:
+        logger.warning(
+            "Nenhuma config ativa para tenant_key=%s (provider=%s)",
+            message.tenant_key,
+            provider.name,
         )
-    except WhatsAppConfig.DoesNotExist:
-        logger.warning("Nenhuma config ativa para o número %s", to_number)
-        twiml = MessagingResponse()
-        twiml.message("Desculpe, este serviço não está disponível no momento.")
-        return HttpResponse(str(twiml), content_type="text/xml")
+        return provider.build_error_response(
+            "Desculpe, este serviço não está disponível no momento."
+        )
 
     org = config.organization
     logger.info(
@@ -117,20 +64,35 @@ def twilio_whatsapp_webhook(request) -> HttpResponse:
         extra={"organization_id": str(org.id), "organization_slug": org.slug},
     )
 
-    # 4. Gera resposta via ChatService (RAG + LLM)
-    customer_phone = from_number.replace("whatsapp:", "")
+    # 4. Transcreve áudio se necessário
+    if message.is_audio and not message.body:
+        try:
+            audio_bytes, ctype = provider.download_audio(message, config)
+            message.body = get_llm_provider().transcribe_audio(audio_bytes, ctype)
+            logger.info("Áudio transcrito: %s", message.body[:100])
+        except Exception as exc:
+            logger.error("Erro ao transcrever áudio: %s", exc)
+            return provider.send_reply(
+                config,
+                message,
+                "Desculpe, não consegui entender o áudio. Pode escrever a mensagem?",
+            )
 
+    if not message.body:
+        return HttpResponse(status=204)
+
+    # 5. Gera resposta via ChatService (RAG + LLM)
     try:
         service = ChatService()
         assistant_response = service.generate_response(
             agent=config.agent,
-            customer_phone=customer_phone,
-            user_message=body,
+            customer_phone=message.from_phone,
+            user_message=message.body,
         )
     except Exception as exc:
         logger.error(
             "Erro ao gerar resposta para %s (org=%s): %s",
-            customer_phone,
+            message.from_phone,
             org.slug,
             exc,
             extra={"organization_id": str(org.id), "organization_slug": org.slug},
@@ -140,8 +102,9 @@ def twilio_whatsapp_webhook(request) -> HttpResponse:
             "Por favor, tente novamente em instantes."
         )
 
-    # 5. Retorna resposta como TwiML
-    twiml = MessagingResponse()
-    twiml.message(assistant_response)
+    # 6. Envia resposta (TwiML no Twilio, POST /send/text no uazapi)
+    return provider.send_reply(config, message, assistant_response)
 
-    return HttpResponse(str(twiml), content_type="text/xml")
+
+# Alias retrocompatível — o nome antigo ainda é referenciado em test_webhook.py
+twilio_whatsapp_webhook = whatsapp_webhook

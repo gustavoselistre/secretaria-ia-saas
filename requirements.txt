@@ -9,6 +9,7 @@ google-cloud-aiplatform
 google-genai
 langchain-google-vertexai
 twilio
+qrcode[pil]
 requests
 python-json-logger
 google-api-python-client

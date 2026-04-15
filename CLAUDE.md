@@ -8,7 +8,9 @@ AI assistant guide for this codebase. Read this before making any changes.
 
 Multi-tenant SaaS application providing WhatsApp-based AI secretarial services. Organizations configure AI agents that handle customer conversations via WhatsApp, using RAG (Retrieval Augmented Generation) and function-calling tools to schedule appointments, generate quotes, and capture leads.
 
-**Stack**: Python 3.12 + Django 4.2+ + PostgreSQL/pgvector + Twilio + OpenAI/Google Gemini
+**Stack**: Python 3.12 + Django 4.2+ + PostgreSQL/pgvector + Twilio / uazapi.dev + OpenAI/Google Gemini
+
+WhatsApp provider is selectable at runtime via the `WHATSAPP_PROVIDER` env var (`twilio` or `uazapi`). Provider-specific logic is encapsulated in `webhook/providers.py`.
 
 ---
 
@@ -109,9 +111,18 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json  # if AI_PROVIDER=vertexai
 GOOGLE_CLOUD_PROJECT=my-project   # if AI_PROVIDER=vertexai
 GOOGLE_CLOUD_LOCATION=us-central1 # if AI_PROVIDER=vertexai
 
-# Twilio
+# WhatsApp provider: "twilio" (padrão) ou "uazapi"
+WHATSAPP_PROVIDER=twilio
+
+# Twilio (quando WHATSAPP_PROVIDER=twilio)
 TWILIO_ACCOUNT_SID=AC...
 TWILIO_AUTH_TOKEN=...
+
+# uazapi.dev (quando WHATSAPP_PROVIDER=uazapi)
+UAZAPI_BASE_URL=https://free.uazapi.com
+UAZAPI_ADMIN_TOKEN=...                     # needed to create instances
+UAZAPI_WEBHOOK_HMAC_SECRET=...             # validates x-hmac-signature
+UAZAPI_WEBHOOK_URL=https://yourdomain.com/webhook/whatsapp/
 
 # Initial superuser (used by entrypoint.sh)
 DJANGO_SUPERUSER_USERNAME=admin
@@ -229,9 +240,9 @@ All primary keys are UUIDs (`UUIDField(primary_key=True, default=uuid.uuid4)`).
 |-----|---------|---------|
 | `/healthz/` | inline | Health check → `{"status": "ok"}` |
 | `/admin/` | Django admin | Full model management |
-| `/webhook/whatsapp/` | `webhook.views.twilio_whatsapp_webhook` | Twilio POST endpoint |
+| `/webhook/whatsapp/` | `webhook.views.whatsapp_webhook` | Twilio/uazapi POST endpoint |
 
-The webhook validates Twilio's X-Signature header. In production, the full URL must be configured in the Twilio console.
+The webhook delegates parsing and signature validation to the active provider (see `webhook/providers.py`). Twilio validates via `X-Twilio-Signature`; uazapi validates via `x-hmac-signature` (HMAC-SHA256 of the raw body with `UAZAPI_WEBHOOK_HMAC_SECRET`). In production, the full URL must be configured in the active provider's console/API.
 
 ---
 
@@ -336,7 +347,7 @@ Set `CLOUD_SQL_INSTANCE=project:region:instance` to use Unix socket instead of T
 
 ### Security Rules
 
-- **Never** skip Twilio signature validation in `webhook/views.py`
+- **Never** skip the provider's signature validation in `webhook/providers.py` (Twilio `X-Twilio-Signature` or uazapi `x-hmac-signature`)
 - **Always** scope database queries by `organization` for tenant isolation
 - **Never** log sensitive data: phone numbers should be partially masked in logs, no API keys, no message content at INFO level
 - Set `DEBUG=False` in production
