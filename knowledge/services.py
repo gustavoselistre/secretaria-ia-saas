@@ -15,11 +15,13 @@ from django.db import transaction
 from pgvector.django import CosineDistance
 
 from knowledge.models import KnowledgeBase, KnowledgeChunk
+from knowledge.parsers import extract_text_from_file, extract_text_from_url
 from organizations.models import Organization
 
 logger = logging.getLogger(__name__)
 
 EMBEDDING_DIMENSIONS = 768
+EMBEDDING_BATCH_SIZE = 64
 
 
 # ---------------------------------------------------------------------------
@@ -31,8 +33,12 @@ class EmbeddingProvider(ABC):
     """Interface abstrata para provedores de embedding."""
 
     @abstractmethod
+    def get_embeddings(self, texts: list[str]) -> list[list[float]]:
+        """Retorna os vetores de embedding para *texts* (em lote)."""
+
     def get_embedding(self, text: str) -> list[float]:
-        """Retorna o vetor de embedding para *text*."""
+        """Conveniência — embute 1 texto reusando ``get_embeddings``."""
+        return self.get_embeddings([text])[0]
 
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):
@@ -48,16 +54,18 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             )
         self._client = OpenAI(api_key=api_key)
 
-    def get_embedding(self, text: str) -> list[float]:
+    def get_embeddings(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
         try:
             response = self._client.embeddings.create(
-                input=[text],
+                input=texts,
                 model="text-embedding-3-small",
                 dimensions=EMBEDDING_DIMENSIONS,
             )
-            return response.data[0].embedding
+            return [item.embedding for item in response.data]
         except Exception as exc:
-            logger.error("Erro ao gerar embedding via OpenAI: %s", exc)
+            logger.error("Erro ao gerar embeddings via OpenAI: %s", exc)
             raise
 
 
@@ -88,16 +96,18 @@ class VertexAIEmbeddingProvider(EmbeddingProvider):
                 vertexai=True, project=project, location=location,
             )
 
-    def get_embedding(self, text: str) -> list[float]:
+    def get_embeddings(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
         try:
             response = self._client.models.embed_content(
                 model="gemini-embedding-001",
-                contents=text,
+                contents=texts,
                 config={"output_dimensionality": EMBEDDING_DIMENSIONS},
             )
-            return response.embeddings[0].values
+            return [emb.values for emb in response.embeddings]
         except Exception as exc:
-            logger.error("Erro ao gerar embedding via Google GenAI: %s", exc)
+            logger.error("Erro ao gerar embeddings via Google GenAI: %s", exc)
             raise
 
 
@@ -179,6 +189,24 @@ class KnowledgeService:
 
         return chunks
 
+    # -- Embedding em batch -------------------------------------------------
+
+    def _embed_in_batches(
+        self, chunks: list[str], batch_size: int = EMBEDDING_BATCH_SIZE
+    ) -> list[list[float]]:
+        """Gera embeddings para *chunks* agrupando em requisições de *batch_size*."""
+        embeddings: list[list[float]] = []
+        for start in range(0, len(chunks), batch_size):
+            batch = chunks[start : start + batch_size]
+            logger.debug(
+                "Gerando embeddings — batch %d-%d de %d",
+                start + 1,
+                start + len(batch),
+                len(chunks),
+            )
+            embeddings.extend(self._provider.get_embeddings(batch))
+        return embeddings
+
     # -- Ingestão -----------------------------------------------------------
 
     @transaction.atomic
@@ -202,20 +230,59 @@ class KnowledgeService:
 
         kb = KnowledgeBase.objects.create(organization=organization, title=title)
 
-        for idx, chunk_text in enumerate(chunks):
-            embedding = self._provider.get_embedding(chunk_text)
-            KnowledgeChunk.objects.create(
-                knowledge_base=kb,
-                content=chunk_text,
-                embedding=embedding,
-                metadata={"chunk_index": idx, "source": title},
-            )
-            logger.debug("Chunk %d/%d salvo.", idx + 1, len(chunks))
+        embeddings = self._embed_in_batches(chunks)
+
+        KnowledgeChunk.objects.bulk_create(
+            [
+                KnowledgeChunk(
+                    knowledge_base=kb,
+                    content=chunk_text,
+                    embedding=embedding,
+                    metadata={"chunk_index": idx, "source": title},
+                )
+                for idx, (chunk_text, embedding) in enumerate(zip(chunks, embeddings))
+            ]
+        )
 
         logger.info(
-            "Documento '%s' ingerido com sucesso — KnowledgeBase %s", title, kb.id
+            "Documento '%s' ingerido com sucesso — KnowledgeBase %s (%d chunks)",
+            title,
+            kb.id,
+            len(chunks),
         )
         return kb
+
+    def ingest_file(
+        self,
+        organization: Organization,
+        file_obj,
+        filename: str,
+        title: str | None = None,
+    ) -> KnowledgeBase:
+        """Extrai texto de um arquivo (TXT/MD/PDF/DOCX) e ingere.
+
+        Se *title* for vazio, usa o nome do arquivo sem extensão.
+        """
+        text, suggested_title = extract_text_from_file(file_obj, filename)
+        return self.ingest_document(
+            organization=organization,
+            title=(title or suggested_title).strip(),
+            raw_text=text,
+        )
+
+    def ingest_url(
+        self,
+        organization: Organization,
+        url: str,
+        title: str | None = None,
+    ) -> KnowledgeBase:
+        """Baixa *url*, extrai texto e ingere. Título vem da página se vazio."""
+        text, suggested_title = extract_text_from_url(url)
+        return self.ingest_document(
+            organization=organization,
+            title=(title or suggested_title).strip(),
+            raw_text=text,
+        )
 
     # -- Busca vetorial -----------------------------------------------------
 

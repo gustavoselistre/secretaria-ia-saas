@@ -13,3 +13,6 @@ requests
 python-json-logger
 google-api-python-client
 google-auth
+pypdf
+python-docx
+beautifulsoup4
