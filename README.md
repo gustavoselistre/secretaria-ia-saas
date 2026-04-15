@@ -7,7 +7,7 @@ Plataforma SaaS multi-tenant que fornece secretárias virtuais via WhatsApp. Org
 ```
 Cliente envia mensagem no WhatsApp
         ↓
-   Twilio recebe e repassa via webhook
+   Twilio ou uazapi recebe e repassa via webhook
         ↓
    Agente de IA processa (RAG + function calling)
         ↓
@@ -22,7 +22,7 @@ O agente usa RAG (Retrieval Augmented Generation) para consultar a base de conhe
 
 - **Backend**: Python 3.12 + Django 4.2
 - **Banco de dados**: PostgreSQL 17 + pgvector (busca semântica)
-- **WhatsApp**: Twilio
+- **WhatsApp**: Twilio (padrão) ou [uazapi.dev](https://uazapi.dev/) — selecionável via `WHATSAPP_PROVIDER`
 - **IA**: OpenAI (GPT-4o) ou Google Gemini 2.5 Flash
 - **Deploy**: Docker / Google Cloud Run
 
@@ -58,9 +58,18 @@ OPENAI_API_KEY=sk-...
 # AI_PROVIDER=google
 # GOOGLE_API_KEY=...
 
-# Twilio (necessário para receber mensagens reais)
+# Provedor WhatsApp: "twilio" (padrão) ou "uazapi"
+WHATSAPP_PROVIDER=twilio
+
+# Twilio (quando WHATSAPP_PROVIDER=twilio)
 TWILIO_ACCOUNT_SID=AC...
 TWILIO_AUTH_TOKEN=...
+
+# uazapi.dev (quando WHATSAPP_PROVIDER=uazapi)
+UAZAPI_BASE_URL=https://free.uazapi.com
+UAZAPI_ADMIN_TOKEN=<token-admin-da-uazapi>          # necessário apenas para criar instâncias
+UAZAPI_WEBHOOK_HMAC_SECRET=<segredo-para-validar-x-hmac-signature>
+UAZAPI_WEBHOOK_URL=https://seu-dominio/webhook/whatsapp/
 
 # Superusuário inicial
 DJANGO_SUPERUSER_USERNAME=admin
@@ -157,7 +166,23 @@ gcloud run deploy secretaria-ia \
   --set-env-vars "SECRET_KEY=...,DB_NAME=..."
 ```
 
-Configure o webhook do Twilio para apontar para `https://seu-dominio/webhook/whatsapp/`.
+Configure o webhook do provider escolhido para apontar para `https://seu-dominio/webhook/whatsapp/`.
+
+### Usando uazapi.dev
+
+```bash
+# Cria a instância, configura webhook e exibe o QR code para escanear
+python manage.py setup_tenant \
+  --provider uazapi \
+  --org "Minha Empresa" --slug minha-empresa \
+  --phone "+5551999990000" \
+  --webhook-url "https://seu-dominio/webhook/whatsapp/"
+
+# Para reexibir o QR code se a sessão desconectar:
+python manage.py uazapi_qr --org minha-empresa
+```
+
+O QR code é salvo em `/tmp/uazapi_qr.png`. Escaneie com o app do WhatsApp em **Aparelhos conectados → Conectar um aparelho**.
 
 ---
 

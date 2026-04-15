@@ -1,7 +1,7 @@
 from django.urls import path
 
-from webhook.views import twilio_whatsapp_webhook
+from webhook.views import whatsapp_webhook
 
 urlpatterns = [
-    path("whatsapp/", twilio_whatsapp_webhook, name="twilio-whatsapp-webhook"),
+    path("whatsapp/", whatsapp_webhook, name="whatsapp-webhook"),
 ]
